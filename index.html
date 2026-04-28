@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Prompt Sharding</title>
+  <meta name="description" content="Prompt Sharding is a distributed trust protocol for AI workflows. Segment LLM context across multiple providers so no single model or vendor sees the complete picture." />
+  <meta name="theme-color" content="#f7f6f2" />
+  <link rel="preconnect" href="https://api.fontshare.com" />
+  <link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&f[]=boska@400,500,700&display=swap" rel="stylesheet" />
+  <style>
+    :root, [data-theme="light"] {
+      --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+      --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+      --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+      --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+      --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
+      --text-2xl: clamp(2rem, 1.2rem + 2.5vw, 3.5rem);
+      --text-3xl: clamp(2.5rem, 1rem + 4vw, 5rem);
+      --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem; --space-4: 1rem; --space-5: 1.25rem; --space-6: 1.5rem; --space-8: 2rem; --space-10: 2.5rem; --space-12: 3rem; --space-16: 4rem; --space-20: 5rem; --space-24: 6rem;
+      --color-bg: #f7f6f2;
+      --color-surface: #f9f8f5;
+      --color-surface-2: #fbfbf9;
+      --color-surface-offset: #f3f0ec;
+      --color-border: #d4d1ca;
+      --color-divider: #dcd9d5;
+      --color-text: #28251d;
+      --color-text-muted: #7a7974;
+      --color-text-faint: #bab9b4;
+      --color-text-inverse: #f9f8f4;
+      --color-primary: #01696f;
+      --color-primary-hover: #0c4e54;
+      --color-primary-highlight: #cedcd8;
+      --color-orange: #da7101;
+      --radius-sm: 0.375rem; --radius-md: 0.5rem; --radius-lg: 0.75rem; --radius-xl: 1rem; --radius-full: 9999px;
+      --shadow-sm: 0 1px 2px rgba(40, 37, 29, 0.06);
+      --shadow-md: 0 4px 12px rgba(40, 37, 29, 0.08);
+      --shadow-lg: 0 16px 40px rgba(40, 37, 29, 0.12);
+      --font-body: 'General Sans', Inter, sans-serif;
+      --font-display: 'Boska', Georgia, serif;
+      --content-default: 1100px;
+      --content-narrow: 720px;
+      --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    [data-theme="dark"] {
+      --color-bg: #171614;
+      --color-surface: #1c1b19;
+      --color-surface-2: #201f1d;
+      --color-surface-offset: #1d1c1a;
+      --color-border: #393836;
+      --color-divider: #262523;
+      --color-text: #cdccca;
+      --color-text-muted: #9a9996;
+      --color-text-faint: #5a5957;
+      --color-text-inverse: #2b2a28;
+      --color-primary: #4f98a3;
+      --color-primary-hover: #227f8b;
+      --color-primary-highlight: #313b3b;
+      --color-orange: #fdab43;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
+      --shadow-lg: 0 16px 40px rgba(0,0,0,0.45);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; -webkit-text-size-adjust: none; text-size-adjust: none; }
+    body { margin: 0; min-height: 100dvh; font-family: var(--font-body); font-size: var(--text-base); line-height: 1.6; background: var(--color-bg); color: var(--color-text); }
+    img, svg { display: block; max-width: 100%; }
+    a { color: inherit; text-decoration: none; }
+    button, input { font: inherit; }
+    :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; border-radius: var(--radius-sm); }
+    .container { width: min(calc(100% - 2rem), var(--content-default)); margin: 0 auto; }
+    .skip-link { position: absolute; left: -999px; top: 1rem; background: var(--color-primary); color: var(--color-text-inverse); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); z-index: 100; }
+    .skip-link:focus { left: 1rem; }
+    .site-header { position: sticky; top: 0; z-index: 40; backdrop-filter: blur(14px); background: color-mix(in srgb, var(--color-bg) 86%, transparent); border-bottom: 1px solid rgba(122,121,116,.18); }
+    .site-header-inner { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); min-height: 72px; }
+    .brand { display: inline-flex; align-items: center; gap: var(--space-3); font-weight: 600; }
+    .logo { width: 34px; height: 34px; color: var(--color-primary); }
+    .brand-name { font-size: var(--text-sm); letter-spacing: .02em; }
+    .nav { display: none; gap: var(--space-4); color: var(--color-text-muted); }
+    .nav a:hover { color: var(--color-text); }
+    .header-actions { display: flex; align-items: center; gap: var(--space-3); }
+    .theme-toggle { width: 44px; height: 44px; border: 1px solid rgba(122,121,116,.22); border-radius: var(--radius-full); display: inline-flex; align-items: center; justify-content: center; background: var(--color-surface-2); color: var(--color-text); cursor: pointer; transition: transform var(--transition), background var(--transition), border-color var(--transition); }
+    .theme-toggle:hover { transform: translateY(-1px); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 46px; padding: 0 var(--space-5); border-radius: var(--radius-full); border: 1px solid transparent; font-size: var(--text-sm); font-weight: 600; transition: transform var(--transition), background var(--transition), border-color var(--transition), color var(--transition), box-shadow var(--transition); }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary { background: var(--color-primary); color: var(--color-text-inverse); box-shadow: var(--shadow-sm); }
+    .btn-primary:hover { background: var(--color-primary-hover); }
+    .btn-secondary { background: var(--color-surface-2); border-color: rgba(122,121,116,.22); color: var(--color-text); }
+    .hero { padding: clamp(4rem, 10vw, 7rem) 0 clamp(3rem, 8vw, 6rem); }
+    .hero-grid { display: grid; gap: var(--space-12); align-items: start; }
+    .eyebrow { display: inline-flex; align-items: center; gap: .5rem; padding: .45rem .8rem; background: var(--color-primary-highlight); color: var(--color-primary); border-radius: var(--radius-full); font-size: var(--text-xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    h1 { margin: var(--space-5) 0 var(--space-5); font-family: var(--font-display); font-size: var(--text-3xl); line-height: 0.95; letter-spacing: -0.03em; max-width: 12ch; }
+    .hero-copy { max-width: 62ch; color: var(--color-text-muted); }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-6); }
+    .mini-note { margin-top: var(--space-4); color: var(--color-text-muted); font-size: var(--text-sm); }
+    .hero-card { background: linear-gradient(180deg, var(--color-surface-2), var(--color-surface)); border: 1px solid rgba(122,121,116,.18); border-radius: 28px; padding: var(--space-6); box-shadow: var(--shadow-lg); position: relative; overflow: hidden; }
+    .hero-card::after { content: ''; position: absolute; inset: auto -10% -25% auto; width: 220px; height: 220px; background: radial-gradient(circle, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 70%); pointer-events: none; }
+    .terminal { background: #121212; color: #e8f6f7; border-radius: 20px; padding: var(--space-4); font-size: 0.92rem; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); overflow: auto; }
+    [data-theme="dark"] .terminal { background: #101111; }
+    .terminal-header { display: flex; gap: .4rem; margin-bottom: var(--space-4); }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #ff5f57; }
+    .dot:nth-child(2) { background: #ffbd2f; }
+    .dot:nth-child(3) { background: #28ca42; }
+    .terminal code { white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .stats { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: var(--space-3); margin-top: var(--space-5); }
+    .stat { padding: var(--space-4); background: rgba(255,255,255,.03); border: 1px solid rgba(122,121,116,.14); border-radius: 18px; }
+    .stat strong { display: block; font-size: var(--text-lg); color: var(--color-text); }
+    section { padding: clamp(3.5rem, 8vw, 6rem) 0; }
+    .section-head { margin-bottom: var(--space-8); max-width: 60ch; }
+    .section-head h2 { margin: 0 0 var(--space-3); font-size: var(--text-xl); line-height: 1.05; }
+    .section-head p { margin: 0; color: var(--color-text-muted); }
+    .grid-3, .grid-2 { display: grid; gap: var(--space-4); }
+    .card { background: var(--color-surface); border: 1px solid rgba(122,121,116,.16); border-radius: 24px; padding: var(--space-5); box-shadow: var(--shadow-sm); }
+    .card h3 { margin: 0 0 var(--space-2); font-size: var(--text-lg); }
+    .card p { margin: 0; color: var(--color-text-muted); }
+    .kicker { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--color-orange); font-weight: 700; margin-bottom: var(--space-3); }
+    .flow { display: grid; gap: var(--space-4); }
+    .flow-step { display: grid; grid-template-columns: auto 1fr; gap: var(--space-4); align-items: start; padding: var(--space-5); background: var(--color-surface); border: 1px solid rgba(122,121,116,.16); border-radius: 24px; }
+    .flow-num { width: 40px; height: 40px; border-radius: 50%; background: var(--color-primary-highlight); color: var(--color-primary); display: flex; align-items: center; justify-content: center; font-weight: 700; }
+    .compare { overflow: auto; border-radius: 24px; border: 1px solid rgba(122,121,116,.16); background: var(--color-surface); }
+    table { width: 100%; border-collapse: collapse; min-width: 640px; }
+    th, td { text-align: left; padding: var(--space-4); border-bottom: 1px solid rgba(122,121,116,.12); vertical-align: top; }
+    th { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--color-text-muted); }
+    td { color: var(--color-text); }
+    .security-note { padding: var(--space-6); background: color-mix(in srgb, var(--color-orange) 12%, var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-orange) 20%, transparent); border-radius: 24px; }
+    .security-note h3 { margin-top: 0; }
+    .cta-wrap { display: grid; gap: var(--space-4); background: linear-gradient(180deg, var(--color-surface), var(--color-surface-2)); border: 1px solid rgba(122,121,116,.16); border-radius: 28px; padding: clamp(1.5rem, 4vw, 2.5rem); }
+    .waitlist-box { display: grid; gap: var(--space-4); }
+    .input-row { display: flex; flex-direction: column; gap: var(--space-3); }
+    .input-row input { min-height: 52px; padding: 0 var(--space-4); border-radius: var(--radius-full); border: 1px solid rgba(122,121,116,.22); background: var(--color-surface-2); color: var(--color-text); }
+    .form-help { color: var(--color-text-muted); font-size: var(--text-sm); }
+    .footer { padding: var(--space-8) 0 var(--space-10); color: var(--color-text-muted); }
+    .footer-inner { display: flex; flex-direction: column; gap: var(--space-3); padding-top: var(--space-6); border-top: 1px solid rgba(122,121,116,.16); }
+    .link-row { display: flex; flex-wrap: wrap; gap: var(--space-4); }
+    @media (min-width: 760px) {
+      .nav { display: flex; }
+      .hero-grid { grid-template-columns: minmax(0, 1.2fr) minmax(320px, .95fr); }
+      .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+      .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .flow { grid-template-columns: repeat(3, minmax(0,1fr)); }
+      .input-row { flex-direction: row; }
+      .input-row input { flex: 1; }
+      .footer-inner { flex-direction: row; justify-content: space-between; align-items: center; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container site-header-inner">
+      <a class="brand" href="#top" aria-label="Prompt Sharding home">
+        <svg class="logo" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <rect x="4" y="8" width="14" height="14" rx="4" stroke="currentColor" stroke-width="3"/>
+          <rect x="30" y="8" width="14" height="14" rx="4" stroke="currentColor" stroke-width="3"/>
+          <rect x="17" y="26" width="14" height="14" rx="4" stroke="currentColor" stroke-width="3"/>
+          <path d="M18 15h12M11 22v4c0 3.3 2.7 6 6 6h0M37 22v4c0 3.3-2.7 6-6 6h0" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+        <span class="brand-name">Prompt Sharding</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="#how">How it works</a>
+        <a href="#security">Security</a>
+        <a href="#beta">Beta</a>
+      </nav>
+      <div class="header-actions">
+        <a class="btn btn-secondary" href="https://github.com/nothinginfinity/prompt-sharding" target="_blank" rel="noopener noreferrer">View spec</a>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to dark mode">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="container hero-grid">
+        <div>
+          <div class="eyebrow">Distributed trust for AI workflows</div>
+          <h1>Split AI context across providers so no single model sees the whole.</h1>
+          <p class="hero-copy">Prompt Sharding is a phone-first security protocol for multi-model workflows. It uses a GitHub ledger, signed JSON envelopes, and agent inboxes so Perplexity, Claude, and ChatGPT can collaborate without any one provider receiving the complete picture.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#beta">Join the first 100</a>
+            <a class="btn btn-secondary" href="https://github.com/nothinginfinity/prompt-sharding/blob/main/docs/quickstart.md" target="_blank" rel="noopener noreferrer">Read quickstart</a>
+          </div>
+          <p class="mini-note">Built for real use now: code review, research pipelines, and turn-based async game engines from your iPhone.</p>
+        </div>
+        <aside class="hero-card" aria-label="Protocol preview">
+          <div class="terminal" role="img" aria-label="Example prompt sharding flow">
+            <div class="terminal-header"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+            <code>task: contract-review
+├─ shard 1 → alice.mmcp  (structure)
+├─ shard 2 → bob.mmcp    (risk)
+└─ shard 3 → carol.mmcp  (summary)
+
+provider view:
+- Perplexity: shard 1 only
+- Claude:     shard 2 only
+- ChatGPT:    shard 3 only
+
+ledger:
+- signed envelopes
+- commit history
+- assembled receipt</code>
+          </div>
+          <div class="stats">
+            <div class="stat"><strong>3 providers</strong><span>One workflow, segmented context.</span></div>
+            <div class="stat"><strong>0 servers</strong><span>GitHub as the durable ledger.</span></div>
+            <div class="stat"><strong>1 phone</strong><span>Your iPhone as the control plane.</span></div>
+            <div class="stat"><strong>v0.1 live</strong><span>Spec and reference ledger are public.</span></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="how">
+      <div class="container">
+        <div class="section-head">
+          <div class="kicker">How it works</div>
+          <h2>The ledger is the trust boundary.</h2>
+          <p>Instead of giving one AI provider the entire conversation, Prompt Sharding assigns each provider a role-specific slice. The full result is assembled only in the ledger, where every move is auditable.</p>
+        </div>
+        <div class="flow">
+          <article class="flow-step">
+            <div class="flow-num">1</div>
+            <div><h3>Define the task</h3><p>A contract review, code review, research run, or game turn enters the ledger as a signed envelope.</p></div>
+          </article>
+          <article class="flow-step">
+            <div class="flow-num">2</div>
+            <div><h3>Split into shards</h3><p>The router uses <code>shards.json</code> to assign each model the minimum necessary context for its role.</p></div>
+          </article>
+          <article class="flow-step">
+            <div class="flow-num">3</div>
+            <div><h3>Assemble receipts</h3><p>Each agent signs its output. The ledger combines the results without ever sending the full prompt back to any one provider.</p></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <div class="section-head">
+          <div class="kicker">Immediate uses</div>
+          <h2>Useful on day one.</h2>
+          <p>This is not a hypothetical research toy. The first product is already clear: personal and team workflows where provider segmentation matters right now.</p>
+        </div>
+        <div class="grid-3">
+          <article class="card"><h3>Multi-model code review</h3><p>Route architecture to one model, security to another, and tests to a third. No single provider sees the whole review context.</p></article>
+          <article class="card"><h3>Personal research pipelines</h3><p>One model gathers sources, another checks contradictions, another writes the final brief. The protocol coordinates the handoffs.</p></article>
+          <article class="card"><h3>Async game engines</h3><p>Turn-based games can live as git history. Each move is a signed envelope, each new state is regenerated and logged without streaming.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="security">
+      <div class="container">
+        <div class="section-head">
+          <div class="kicker">Security posture</div>
+          <h2>Strong today, honest about the edges.</h2>
+          <p>Prompt Sharding already improves privacy against single-provider exposure. v1 does not claim perfect security; it clearly defines what it protects and what still depends on the GitHub ledger.</p>
+        </div>
+        <div class="compare">
+          <table>
+            <thead>
+              <tr><th>Protects now</th><th>Why it matters</th><th>Still on you in v1</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Provider breach containment</td><td>A compromised model vendor sees only one shard, not the total task.</td><td>Your GitHub token and repo access must be protected.</td></tr>
+              <tr><td>Training-data minimization</td><td>Providers only receive a role-specific fragment, which lowers exposure.</td><td>The ledger is still plaintext until encrypted storage lands in v2.</td></tr>
+              <tr><td>Prompt isolation</td><td>Bad instructions or injected context stay contained to one role instead of poisoning the whole workflow.</td><td>The router and envelope policies still need stronger enforcement.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="security-note" style="margin-top: 1rem;">
+          <h3>v1 security note</h3>
+          <p>Your GitHub Personal Access Token is the key to the ledger. Treat it like a password. Store it in a password manager, keep repo permissions tight, and never paste it into prompts or markdown files. Prompt Sharding protects against single-provider overexposure, but the ledger is only as secure as your GitHub account.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container grid-2">
+        <div>
+          <div class="section-head">
+            <div class="kicker">Why now</div>
+            <h2>A product before full hardening.</h2>
+            <p>You can use Prompt Sharding today because the protocol already creates real value. The first release is a transparent beta: protocol-level segmentation now, encrypted storage and stronger policy enforcement next.</p>
+          </div>
+          <div class="card">
+            <h3>What beta users get</h3>
+            <p>Access to the public spec, the reference ledger structure, setup guidance, and direct onboarding for the first 100 users. That's enough to test real workflows with immediate privacy gains.</p>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <h3>Enterprise path</h3>
+            <p>Prompt Sharding is already positioned for GitHub Enterprise because GitHub naturally becomes the neutral audit ledger. That's the bridge from a self-hosted personal workflow to a hardened compliance product.</p>
+          </div>
+          <div class="card" style="margin-top: 1rem;">
+            <h3>Open architecture</h3>
+            <p>The protocol stays model-agnostic. Perplexity, Claude, ChatGPT, and future providers can all participate as long as they can read and write the same signed envelope format.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="beta">
+      <div class="container">
+        <div class="cta-wrap">
+          <div class="section-head" style="margin-bottom: 0;">
+            <div class="kicker">Early access</div>
+            <h2>First 100 users get free beta onboarding.</h2>
+            <p>Start with a self-hosted GitHub ledger, create your first agent spaces, and test prompt sharding on a real workflow.</p>
+          </div>
+          <div class="waitlist-box">
+            <form class="input-row" action="https://tally.so/r/replace-me" method="get" target="_blank" rel="noopener noreferrer">
+              <label class="sr-only" for="email">Email address</label>
+              <input id="email" name="email" type="email" placeholder="you@example.com" aria-label="Email address" required />
+              <button class="btn btn-primary" type="submit">Join beta</button>
+            </form>
+            <div class="form-help">Replace the Tally URL with your real waitlist form before sharing.</div>
+            <div class="link-row">
+              <a class="btn btn-secondary" href="https://github.com/nothinginfinity/prompt-sharding" target="_blank" rel="noopener noreferrer">Open the spec</a>
+              <a class="btn btn-secondary" href="https://github.com/nothinginfinity/prompt-sharding/blob/main/docs/enterprise.md" target="_blank" rel="noopener noreferrer">Enterprise guide</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div>Prompt Sharding — distributed trust for AI workflows.</div>
+      <div class="link-row">
+        <a href="https://github.com/nothinginfinity/prompt-sharding" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/nothinginfinity/prompt-sharding/blob/main/docs/threat-model.md" target="_blank" rel="noopener noreferrer">Threat model</a>
+        <a href="https://github.com/nothinginfinity/prompt-sharding/blob/main/docs/quickstart.md" target="_blank" rel="noopener noreferrer">Quickstart</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      const root = document.documentElement;
+      const toggle = document.querySelector('[data-theme-toggle]');
+      let theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      root.setAttribute('data-theme', theme);
+      const render = () => {
+        toggle.setAttribute('aria-label', 'Switch to ' + (theme === 'dark' ? 'light' : 'dark') + ' mode');
+        toggle.innerHTML = theme === 'dark'
+          ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path></svg>'
+          : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>';
+      };
+      render();
+      toggle.addEventListener('click', function () {
+        theme = theme === 'dark' ? 'light' : 'dark';
+        root.setAttribute('data-theme', theme);
+        render();
+      });
+    }());
+  </script>
+</body>
+</html>
