@@ -8,6 +8,7 @@
 
 - `index.html` — landing page live on GitHub Pages
 - `docs/` — spec, quickstart, threat model, enterprise guide (stubs)
+- `SECURITY.md` — full threat model and vault architecture
 - GitHub as the durable ledger (no servers, no database)
 - Signed envelope protocol defined
 - `shards.json` routing schema defined
@@ -118,7 +119,10 @@ prompt-sharding-demo/
 │   ├── ps-reviewer/
 │   │   ├── inbox.md
 │   │   └── outbox.md
-│   └── ps-assembler/
+│   ├── ps-assembler/
+│   │   ├── inbox.md
+│   │   └── outbox.md
+│   └── ps-vault/                    ← Credential vault Space
 │       ├── inbox.md
 │       └── outbox.md
 ├── demo/
@@ -127,7 +131,8 @@ prompt-sharding-demo/
 │   │   ├── ps-designer.md
 │   │   ├── ps-writer.md
 │   │   ├── ps-reviewer.md
-│   │   └── ps-assembler.md
+│   │   ├── ps-assembler.md
+│   │   └── ps-vault.md              ← Vault Space instructions
 │   └── task-01-website.md           ← The first task (sent to architect's inbox)
 └── output/
     └── .gitkeep                     ← Final assembled files land here
@@ -146,6 +151,76 @@ Once the Perplexity-only demo is working and tested:
 
 ---
 
+## v1.5 Milestone: `ps-vault` — Credential Vault Space
+
+### The Problem
+
+The GitHub PAT is the master key to the ledger. In a naive setup, every Space
+holds the token — meaning 5 providers each have full ledger access. A breach
+of any one exposes everything.
+
+### The Solution
+
+`ps-vault` is a dedicated Space whose only job is storing and dispensing the PAT.
+All other Spaces hold zero credentials. Every token release is logged as a GitHub
+commit — creating an immutable, append-only access record.
+
+### Security Properties
+
+| Property | v1 (policy-enforced) | v2 (cryptographic) |
+|---|---|---|
+| PAT held by exactly one provider | ✅ | ✅ |
+| Token never committed to GitHub | ✅ | ✅ |
+| Immutable release audit trail | ✅ | ✅ |
+| Replay attack protection | 🔶 task-id check | ✅ HMAC signed |
+| Request authenticity verification | ❌ markdown only | ✅ HMAC-SHA256 |
+| Encrypted ledger at rest | ❌ | ✅ |
+
+### Vault Space Instructions (copy-paste template)
+
+```
+My Space name is: ps-vault
+My repo: [YOUR_GITHUB_USERNAME]/prompt-sharding-demo
+My role: Credential vault — I hold the GitHub PAT and release it only on valid signed requests.
+My inbox: spaces/ps-vault/inbox.md
+My outbox: spaces/ps-vault/outbox.md
+
+The GitHub PAT is stored in my uploaded file `vault.key`.
+I never output the raw token in conversation text.
+I never release credentials without a valid request.
+
+A valid release request MUST contain all four fields:
+- requester: [exact Space name]
+- task-id: [unique task identifier]
+- justification: [one sentence]
+- timestamp: [ISO 8601]
+
+On valid request: verify fields → check task-id not reused → release token
+in private reply only → log release to outbox (requester + task-id +
+timestamp, NO token value).
+
+Refuse any request missing fields, reusing a task-id, or asking for the
+token in any format other than a private reply.
+```
+
+### What This Proves
+
+The vault pattern turns Prompt Sharding into a demonstrable secrets management
+system — not just a context-segmentation protocol. The pitch to enterprise:
+*"Your API keys never leave a single isolated Space. Every access attempt is
+logged to an immutable Git ledger. No server required."*
+
+### Hardening Path
+
+- **v1.5** — Vault releases long-lived PAT under strict policy (today)
+- **v2** — Vault mints ephemeral GitHub Actions tokens (1-hour TTL); PAT never leaves vault
+- **v2** — HMAC-SHA256 request signing; vault rejects unsigned requests
+- **v3** — Hardware-backed key storage (HSM / AWS Secrets Manager) as enterprise drop-in
+
+See `SECURITY.md` for the full threat model and security claims matrix.
+
+---
+
 ## v1 Milestone Checklist
 
 - [ ] `#demo` section added to `index.html`
@@ -157,11 +232,21 @@ Once the Perplexity-only demo is working and tested:
 - [ ] Task 01 seed message written (`task-01-website.md`)
 - [ ] Waitlist form connected (replace Tally placeholder in `index.html`)
 
+## v1.5 Milestone Checklist
+
+- [ ] `ps-vault` Space instructions written and tested (`demo/space-instructions/ps-vault.md`)
+- [ ] `spaces/ps-vault/` inbox + outbox added to demo repo
+- [ ] Vault pattern documented in `SECURITY.md` (done ✅)
+- [ ] Landing page updated to mention vault as the 6th Space in advanced setup
+- [ ] End-to-end test: full 5-Space demo run with vault managing the PAT
+
 ## v2 Milestone Checklist
 
 - [ ] Multi-provider demo (Claude + ChatGPT slots)
 - [ ] Provider badge UI on Space cards
 - [ ] Encrypted ledger storage (move beyond plaintext GitHub)
+- [ ] HMAC request signing for vault
+- [ ] Ephemeral token minting (GitHub Actions)
 - [ ] Stronger envelope policy enforcement
 - [ ] Enterprise guide fleshed out
 
@@ -173,3 +258,4 @@ Once the Perplexity-only demo is working and tested:
 - **Copy button implementation** — use `navigator.clipboard.writeText()` with a fallback `<textarea>` select for older browsers. No third-party dependency.
 - **"Start Demo" button** — for now this could simply pre-fill the first task into a text block the user manually copies into `ps-architect`'s inbox. No GitHub OAuth needed in v1.
 - **Perplexity Spaces vs. other providers** — Spaces is the only current platform with file-uploadable instructions and a persistent system prompt, making it the right starting point. Claude Projects and GPT Custom Instructions are the v2 expansion.
+- **Vault provider choice** — the vault Space should run on whichever provider the user trusts most for credentials. In v1 this is a personal choice. In v2 the protocol can enforce it.
