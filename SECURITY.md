@@ -1,22 +1,41 @@
 # Security Model — Prompt Sharding
 
-> Version: 0.1 | Last updated: 2026-04-28
+> Version: 0.2 | Last updated: 2026-04-28
 
 This document defines what Prompt Sharding protects, what it does not protect,
 the honest threat model for v1, and the architectural path toward stronger guarantees.
 
 ---
 
-## The Master Key Problem
+## The Two Core Security Primitives
 
-Prompt Sharding requires a GitHub Personal Access Token (PAT) to read and write
-the ledger. This token is the single most sensitive credential in the system.
+Prompt Sharding's security model rests on two compounding properties that,
+combined, produce guarantees no single-provider AI workflow can match:
 
-In a naive setup, every Space would have the token pasted into its instructions —
-meaning 5 providers all hold the same credential. A breach of any one Space
-exposure equals full ledger compromise.
+### 1. Stateless Sessions
 
-Prompt Sharding solves this with the **Vault Space** pattern (see below).
+Providers are **ephemeral compute**, not memory stores. A Space holds context
+only for the duration of an active conversation. Once output is committed to
+the MMCP ledger (your GitHub repo), the conversation is deleted. The provider
+retains nothing you haven't chosen to keep.
+
+Resuming any task requires exactly two things:
+- The Space Instructions (role, rules, inbox/outbox paths — held by you)
+- One prompt: *"Check your inbox"*
+
+The ledger is the persistent memory. The provider is interchangeable compute.
+
+### 2. Context Sharding
+
+No single provider ever receives the complete picture. Each provider receives
+only the shard assigned to its role — the minimum context necessary to complete
+that role's task. Even if a provider retains server-side infrastructure logs,
+those logs contain only a fragment. The complete task context exists nowhere
+except the assembled ledger — which you own.
+
+**The combination:** stateless sessions bound the *time window* of exposure.
+Context sharding bounds the *scope* of exposure. Together they make any single
+provider's data both temporary and incomplete.
 
 ---
 
@@ -26,60 +45,113 @@ Prompt Sharding solves this with the **Vault Space** pattern (see below).
 
 | Asset | Sensitivity | Location |
 |---|---|---|
-| GitHub PAT | Critical | `ps-vault` Space only (uploaded file, never committed) |
-| Task context (full prompt) | High | Sharded — no single Space ever holds it all |
-| Individual shard content | Medium | Each provider's Space context window only |
-| Assembled output | Medium | GitHub ledger (plaintext in v1, encrypted in v2) |
-| Inbox/outbox contents | Low-Medium | GitHub repo (public or private, your choice) |
+| GitHub PAT | Critical | `ps-vault` Space only — never committed to GitHub |
+| Full task context | High | Assembled ledger only — no provider ever holds it all |
+| Individual shard content | Medium | One provider's context window, one session only |
+| Assembled output | Medium | GitHub ledger (plaintext v1, encrypted v2) |
+| Inbox/outbox contents | Low–Medium | GitHub repo (public or private, your choice) |
+| Provider inference logs | Low | Partial shard only — incomplete without other shards |
 
-### Threats Mitigated by v1
+---
 
-**Provider breach containment**
-If a model provider (Perplexity, Claude, OpenAI) is breached or subpoenaed,
-they can only access the shard(s) assigned to them. No single provider holds
-the complete task context.
+## Threats Mitigated
 
-**Training data minimization**
-Each provider receives the minimum necessary context for their role. A provider
-that only sees "review the CSS for accessibility" cannot reconstruct the full
-contract, codebase, or research document being processed.
+### Provider breach containment
+If a model provider is breached or subpoenaed, they can only produce:
+- The shard(s) assigned to their role
+- Infrastructure logs from sessions that have since been deleted
 
-**Prompt injection containment**
-Malicious instructions injected into one shard affect only that shard's role.
-They cannot cascade across providers because each provider operates in isolation
-with a fixed role definition.
+Neither reveals the complete task. The attacker would need to simultaneously
+breach every provider used in the workflow to reconstruct the full context —
+and even then, only for sessions that overlapped in their retention window.
 
-**Credential exposure reduction**
+### Training data minimization
+Each provider receives a role-specific fragment. A provider that only saw
+"review the CSS for accessibility" cannot reconstruct the contract, codebase,
+or research document being processed. Deleting the conversation after each
+session removes it from the provider's conversation history entirely. What
+remains in infrastructure logs is a fragment, not a document.
+
+### Provider log sharding
+This is the compounding property. Even if every major provider retains
+infrastructure logs for 30 days:
+
+```
+Provider A log:  [shard 1 only — structure]      → useless alone
+Provider B log:  [shard 2 only — risk analysis]  → useless alone
+Provider C log:  [shard 3 only — summary]        → useless alone
+
+Complete picture: exists only in YOUR ledger
+```
+
+An adversary would need to breach three separate providers, correlate logs
+across them, and reassemble the shards — all within the retention window.
+This is not a theoretical attack; it is an expensive, coordinated one.
+
+### Prompt injection containment
+Malicious instructions injected into one shard affect only that role.
+They cannot cascade because each provider operates in a fixed-role context
+with no awareness of the other shards.
+
+### Credential exposure reduction
 With the Vault Space pattern, the GitHub PAT exists in exactly one provider
-context. All other Spaces operate with zero credential knowledge.
+context for one session. All other Spaces operate with zero credential knowledge.
+Every token release is logged to the ledger with requester, task-id, and
+timestamp — but never the token value itself.
 
-**Immutable audit trail**
-Every task, handoff, and token release is a GitHub commit. The ledger is
-append-only and timestamped. You always know who did what and when.
+### Provider lock-in elimination
+Context lives in your ledger, not in any provider's conversation history.
+Switching providers mid-project requires no migration. The inbox is the
+context. Any provider with the Space Instructions can resume from exactly
+where the last session ended.
 
-### Threats NOT Fully Mitigated in v1
+### Immutable audit trail
+Every task, handoff, token release, and assembled output is a GitHub commit.
+The ledger is append-only and timestamped. You always know who did what,
+when, and in what order.
 
-**Vault provider trust**
-The provider running `ps-vault` (e.g., Perplexity) still sees the token
-when it processes a release request. You are trusting that one provider,
-not zero. This is significantly better than trusting five providers, but
-it is not a zero-trust architecture.
+---
 
-**Plaintext ledger**
-The GitHub repo storing inbox/outbox files is plaintext in v1. Anyone
-with read access to the repo can read assembled outputs. Mitigation:
-keep the demo repo private. Encryption is a v2 milestone.
+## Stateless Session Pattern
 
-**No cryptographic request signing**
-Token release requests in v1 are human-readable markdown envelopes.
-There is no HMAC signature verification. A sufficiently creative prompt
-could potentially impersonate a valid requester. Mitigation: the vault
-Space's role instructions enforce strict request format validation.
+This is the operational security practice that activates the full threat model.
 
-**GitHub account security**
-The ledger is only as secure as your GitHub account. Enable 2FA.
-Treat your PAT like a password. Store it in a password manager.
-Never paste it into any prompt, markdown file, or conversation.
+```
+[Task begins]
+        |
+        v
+[Open Space in provider — context loaded from inbox]
+        |
+        v
+[Complete task — output committed to outbox in GitHub ledger]
+        |
+        v
+[Delete conversation from provider UI]
+        |
+        v
+[Provider holds: nothing in conversation history]
+[Provider may hold: infrastructure log of the session]
+[Infrastructure log contains: one shard only — incomplete]
+        |
+        v
+[Resume anytime, any provider: Space Instructions + "check your inbox"]
+```
+
+### Why deleting the conversation matters
+Most providers distinguish between:
+- **Conversation history** — user-visible, used for memory and context, explicitly
+  stored and potentially used in training pipelines
+- **Infrastructure logs** — server-side request/response logs, retained for
+  operational reasons, separate from the product experience
+
+Deleting the conversation eliminates the first category entirely. The second
+category is bounded by the provider's retention policy (typically 30–90 days)
+and contains only the shard — not the full context.
+
+### The honest framing
+This is not zero-knowledge. It is **bounded, sharded, temporary exposure**
+versus the default of **unbounded, complete, permanent storage**. That is a
+fundamental improvement in the threat model, not a marginal one.
 
 ---
 
@@ -87,11 +159,10 @@ Never paste it into any prompt, markdown file, or conversation.
 
 ### Concept
 
-`ps-vault` is a dedicated Perplexity Space whose sole purpose is storing
-and dispensing the GitHub PAT. It receives signed requests via its inbox,
-validates them, and releases credentials only under strict conditions.
-Every release is logged to its outbox — creating an immutable access record
-in the GitHub ledger.
+`ps-vault` is a dedicated Space whose sole purpose is storing and dispensing
+the GitHub PAT. It receives structured requests via its inbox, validates them,
+and releases credentials only under strict conditions. Every release is logged
+to its outbox — an immutable access record in the GitHub ledger.
 
 ### Space Instructions Template
 
@@ -130,75 +201,53 @@ I refuse any request that:
 
 | Item | Location | Visible to |
 |---|---|---|
-| Raw GitHub PAT | Uploaded file in `ps-vault` Space only | Perplexity (vault provider only) |
+| Raw GitHub PAT | Uploaded file in `ps-vault` Space only | Vault provider only, one session at a time |
 | Release log (no token) | `spaces/ps-vault/outbox.md` in GitHub | Anyone with repo read access |
 | Release requests | `spaces/ps-vault/inbox.md` in GitHub | Anyone with repo read access |
-| Token value | Never committed to GitHub | Nobody outside vault Space |
-
----
-
-## Token Lifecycle (v1)
-
-```
-[User creates PAT]
-        |
-        v
-[Uploads to ps-vault Space as a file — never to GitHub]
-        |
-        v
-[Task begins — other Spaces operate without the token]
-        |
-        v
-[Space needing ledger write access sends signed request to ps-vault inbox]
-        |
-        v
-[ps-vault validates request → releases token in private reply]
-        |
-        v
-[Space completes ledger write → token discarded from context]
-        |
-        v
-[ps-vault logs: requester + task-id + timestamp (no token value) → outbox]
-```
-
----
-
-## Hardening Path (v2 and Beyond)
-
-### v1.5 — Ephemeral Tokens
-Instead of releasing the long-lived PAT, `ps-vault` triggers a GitHub Actions
-workflow that mints a short-lived installation token (expires in 1 hour).
-The PAT never leaves the vault. Other Spaces use the ephemeral token only.
-
-### v2 — HMAC Request Signing
-Requests to the vault include an HMAC-SHA256 signature computed from a
-shared secret. The vault verifies the signature before processing any request.
-This makes impersonation of a valid requester cryptographically infeasible.
-
-### v2 — Encrypted Ledger
-All inbox/outbox content is encrypted at rest using a key held only by
-the vault Space. GitHub stores ciphertext; only the vault can decode it.
-
-### v3 — Hardware-Backed Key Storage
-For enterprise deployments: move vault credentials into a hardware security
-module (HSM) or a dedicated secrets manager (HashiCorp Vault, AWS Secrets
-Manager). The Prompt Sharding protocol layer remains unchanged; only the
-storage backend upgrades.
+| Token value | Never committed to GitHub | Nobody outside vault session |
 
 ---
 
 ## Security Claims Summary
 
-| Claim | Status in v1 | Status in v2 |
+| Claim | v1 Status | v2 Status |
 |---|---|---|
-| No single provider sees full task context | ✅ Guaranteed by protocol | ✅ |
-| PAT held by exactly one provider | ✅ With Vault Space pattern | ✅ |
-| Immutable audit trail of all token releases | ✅ GitHub commit log | ✅ |
+| No single provider sees full task context | ✅ Protocol guarantee | ✅ |
+| Provider log exposure is sharded and partial | ✅ Structural guarantee | ✅ |
+| Conversation history deletable after each session | ✅ Operational practice | ✅ |
+| Provider is interchangeable — no lock-in | ✅ Ledger owns all state | ✅ |
+| PAT held by exactly one provider, one session | ✅ Vault Space pattern | ✅ |
 | Token never committed to GitHub | ✅ Vault file only | ✅ |
-| Cryptographic request verification | ❌ Policy-enforced only | ✅ HMAC signing |
+| Immutable audit trail of all token releases | ✅ GitHub commit log | ✅ |
+| Cryptographic request verification | ❌ Policy-enforced only | ✅ HMAC-SHA256 |
 | Encrypted ledger at rest | ❌ Plaintext | ✅ |
+| Ephemeral tokens (never release long-lived PAT) | ❌ | ✅ GitHub Actions TTL |
 | Zero provider trust for credentials | ❌ One provider trusted | 🔶 Reduced surface |
-| Replay attack protection | 🔶 task-id check (honor system) | ✅ Signed + timestamped |
+| Infrastructure log elimination | ❌ Bounded by retention policy | 🔶 Minimize via session length |
+
+---
+
+## Hardening Path
+
+### v1.5 — Vault Space + Stateless Sessions (policy-enforced)
+Delete every conversation after output is committed. Vault holds PAT in
+uploaded file. All other Spaces operate credential-free. Provider exposure
+is sharded, temporary, and incomplete.
+
+### v2 — Ephemeral Tokens + HMAC Signing
+Vault mints short-lived GitHub Actions tokens (1-hour TTL) instead of
+releasing the long-lived PAT. Request signing via HMAC-SHA256 makes
+impersonation of a valid requester cryptographically infeasible.
+
+### v2 — Encrypted Ledger
+All inbox/outbox content is encrypted at rest. GitHub stores ciphertext.
+Only the vault Space can decrypt. Even with full repo read access, an
+attacker sees encrypted fragments.
+
+### v3 — Hardware-Backed Key Storage
+For enterprise deployments: vault credentials move into an HSM or dedicated
+secrets manager (HashiCorp Vault, AWS Secrets Manager). The Prompt Sharding
+protocol layer is unchanged — only the storage backend upgrades.
 
 ---
 
